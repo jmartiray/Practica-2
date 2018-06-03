@@ -21,11 +21,11 @@ Esta práctica se ha realizado individualmente por _Jose Manuel Martínez Raya_.
 1. PDF con las respuestas e información más detallada.<br/>
   _respuestas.pdf_
     
-2. Carpeta con el código ejecutable en Rstudio y otro para su visualización.<br/>
+2. Carpeta _code_ con el código ejecutable en Rstudio y su visualización.<br/>
 _titanic.Rmd_ y _titanic.html_
 
-3. Carpeta de con los datos originales.<br/>
+3. Datos originales.<br/>
 _train.csv_, _test.csv_ y _gender_submission.csv_
 
-4. Carpeta de con los datos de salida analizados.<br/>
+4. Datos de salida analizados.<br/>
 _titanic_outc.csv_
