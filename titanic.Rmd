@@ -1,0 +1,323 @@
+---
+title: "Práctica 2: Limpieza y validación de los datos"
+author: "Jose Manuel Martínez Raya"
+date: "4 de Mayo de 2018"
+output:
+  html_document: null
+  pdf_document: default
+  number_sections: yes
+  highlight: default
+  theme: cosmo
+  toc: yes
+  toc_depth: 2
+---
+<br/><br/>
+
+******
+# 1 Descripción del dataset. (Carga de datos)
+******
+
+Carga de paquetes
+
+```{r eval=TRUE, echo=TRUE, warning=FALSE}
+library(knitr)
+library(nortest)
+library(lattice)
+library(magrittr)
+library(ggplot2)
+library(ggpubr)
+library(caret)
+library(C50)
+```
+
+Cargamos los ficheros que vamos utilizar para esta práctica, lo podemos encontrar en:
+https://www.kaggle.com/c/titanic
+<br/>
+
+```{r, echo=TRUE,eval=TRUE}
+`train` <- read.csv("train.csv")
+`test` <- read.csv("test.csv")
+`gs` <- read.csv("gender_submission.csv")
+```
+
+******
+# 2 Integración y selección de los datos de interés a analizar
+******
+
+Integración y unión de dataset.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, eval=TRUE}
+test_total <- merge(test, gs, by="PassengerId")
+dataset <- rbind(train,test_total)
+rm(train,test,gs,test_total)
+attach(dataset)
+```
+
+Nombre y clase de las variables del dataset.
+
+```{r,eval=TRUE,echo=TRUE}
+res <- sapply(dataset,class)
+kable(data.frame(variables=names(res),clase=as.vector(res)))
+rm(res)
+```
+
+Selección de variables
+
+
+```{r,eval=TRUE,echo=TRUE}
+dataset <- dataset[, -c(9:12)]
+dataset$PassengerId <- NULL
+dataset$Name <- NULL
+```
+
+Transformación de variables
+
+```{r,eval=TRUE,echo=TRUE}
+dataset$Survived <- as.factor(ifelse(dataset$Survived == 1, 'Sobrevive', 'Fallece'))
+dataset$Pclass <- as.factor(Pclass)
+dataset$Age <- as.integer(Age)
+```
+
+******
+# 3 Limpieza de los datos.
+******
+
+******
+## 3.1 Identificación y tratamiento ceros o elementos vacíos
+******
+
+Número de valores ausentes:
+
+```{r,eval=TRUE,echo=TRUE}
+sapply(dataset, function(x)(sum(is.na(x))))
+```
+
+Medias de hombre y mujeres:
+
+```{r,eval=TRUE,echo=TRUE}
+media_hombre <- as.integer(mean (Age[Sex=='male'],na.rm=TRUE))
+media_mujer <- as.integer(mean (Age[Sex=='female'],na.rm=TRUE))
+```
+
+
+Sustituyendo valores ausentes por las respectivas medias:
+
+```{r,eval=TRUE,echo=TRUE}
+dataset$Age[is.na(dataset$Age) & Sex=='male' ] <- media_hombre
+dataset$Age[is.na(dataset$Age) & Sex=='female' ] <- media_mujer
+rm(media_hombre,media_mujer)
+```
+
+******
+## 3.2 Identificación y tratamiento de valores extremos.
+******
+
+
+```{r,eval=TRUE,echo=TRUE}
+boxplot(Age,SibSp,Parch,main="Valores atípicos", col="gray")
+```
+
+```{r,eval=TRUE,echo=TRUE}
+boxplot.stats(Age)$out
+```
+```{r,eval=TRUE,echo=TRUE}
+boxplot.stats(SibSp)$out
+```
+
+```{r,eval=TRUE,echo=TRUE}
+boxplot.stats(Parch)$out
+```
+
+Sustituimos los 8 de la variable SibSp por 5 y 9 de la variable Parch por 6
+
+```{r,eval=TRUE,echo=TRUE}
+dataset$SibSp[SibSp==8] <- 5
+dataset$Parch[Parch==9] <- 6
+```
+
+
+******
+# 4 Análisis de los datos.
+******
+
+
+******
+## 4.1 Selección de los grupos de datos 
+******
+
+
+```{r,eval=TRUE,echo=TRUE}
+S <- dataset[,"Sex"]
+A <- dataset[,"Age"]
+Edad_mujeres <- A[S=="female"]                             
+Edad_hombres <- A[S=="male"]  
+```
+
+******
+## 4.2 Comprobación de la normalidad y homogeneidad de la varianza.
+******
+
+Los intervalos de edad se han tenido en cuenta los cánones de la época y no los actuales.
+
+```{r,eval=TRUE,echo=TRUE}
+dataset$Edad <- cut(dataset$Age, breaks = c(-1, 2, 12, 17, 29, 55, 100),labels = c("bebe", "niño", "adolescente", "joven","adulto","3edad"))
+```
+
+
+```{r,eval=TRUE,echo=TRUE}
+
+###Prueba de Anderson-Darling###
+ad.test(Age)
+
+###Pruena de Lilliefors (Kolmogorov-Smirnov)###
+lillie.test(Age)
+
+###Prueba de Pearson chi-square###
+###basada en una distribución Ji cuadrado y que corresponde a una prueba de bondad de ajuste.###
+pearson.test(Age)
+
+###Prueba de Shapiro-Wilk###
+###Test muy potente para el contraste de normalidad, sobre todo para muestras pequeñas (n<30)
+shapiro.test(Age)
+```
+
+
+```{r,eval=TRUE,echo=TRUE}
+
+#Variable SibsSP
+shapiro.test(SibSp)
+
+#Variable Parch
+shapiro.test(Parch)
+
+#Variable Survived
+shapiro.test(Survived)
+
+#Variable Pclass
+shapiro.test(Pclass)
+```
+
+Histogramas:
+
+```{r,eval=TRUE,echo=TRUE}
+hist(Age)
+```
+
+
+```{r,eval=TRUE,echo=TRUE}
+par(mfrow=c(2,2))
+
+hist(Survived)
+hist(Pclass)
+hist(SibSp)
+hist(Parch)
+```
+
+Categorización de las variables Parch y Sibsp
+
+```{r,eval=TRUE,echo=TRUE}
+familySize <- dataset$SibSp + dataset$Parch + 1
+familySizeClass = array(dim = length(familySize))
+familySizeClass[familySize == 1] = 'Small'
+familySizeClass[familySize >= 2 & familySize <= 4] = 'Medium'
+familySizeClass[familySize > 4] = 'Big'
+dataset$Familia <- as.factor(familySizeClass)
+rm(familySize,familySizeClass)
+```
+
+Estudio de la varianza
+
+```{r,eval=TRUE,echo=TRUE}
+fligner.test(Parch ~ Survived, data=dataset)
+fligner.test(SibSp ~ Survived, data=dataset)
+fligner.test(Age ~ Sex, data=dataset)
+dataset$Parch <- NULL
+dataset$SibSp <- NULL
+dataset$Age <- NULL
+```
+
+******
+## 4.3 Aplicación de pruebas estadísticas para comparar los grupos de datos.
+******
+
+Se divide el conjunto de datos en entrenamiento y prueba
+
+```{r,eval=TRUE,echo=TRUE}
+set.seed(1234)
+temp <-sample(nrow(dataset), 0.80*nrow(dataset))
+train <- dataset[temp,]
+test <- dataset[-temp,]
+rm(temp)
+```
+
+```{r,eval=TRUE,echo=TRUE}
+table(train$Sex, train$Pclass, train$Survived)
+```
+### Regresión logística
+
+```{r,eval=TRUE,echo=TRUE}
+modelo <- glm(Survived ~Sex + Pclass, data=train, family =binomial(link='logit'))
+summary(modelo)
+```
+
+```{r,eval=TRUE,echo=TRUE}
+modelo <- glm(Survived ~Familia + Edad, data=train, family =binomial(link='logit'))
+summary(modelo)
+```
+
+```{r echo=TRUE, message=TRUE, warning=FALSE, r,eval=TRUE}
+Control <- trainControl(method = 'cv', number = 10, classProbs = TRUE, summaryFunction = twoClassSummary)
+rfModel <- train(Survived~., data=train, trControl=Control, method = 'rf', tuneLength = 10, metric = 'ROC', .multicombine=TRUE)
+varImp(rfModel)
+```
+
+### Contraste de hipotesis
+
+
+
+```{r,eval=TRUE,echo=TRUE}
+t.test(Edad_mujeres,Edad_hombres,alternative='less')
+```
+
+### Escritura de ficheros
+
+```{r,eval=TRUE,echo=TRUE}
+write.csv(dataset, file = "titanic_out.csv")
+```
+
+### Arbol de decisión
+
+```{r,eval=TRUE,echo=TRUE}
+arbol <- C5.0(x=train[2:5],y=train$Survived)
+summary(arbol)
+```
+
+```{r,eval=TRUE,echo=TRUE}
+p <- predict(arbol,test,type="class")
+confusionMatrix(data = p, reference = test$Survived)
+```
+
+******
+## 5 Representación de los resultados a partir de tablas y gráficas.
+******
+
+```{r,eval=TRUE,echo=TRUE}
+barplot(prop.table(table(train$Survived)),col=c("orange","blue"))
+```
+
+```{r,eval=TRUE,echo=TRUE}
+p1 <- ggplot(train, aes(Edad, fill = Survived)) + geom_bar(position = 'fill') + labs(y = '%')
+p2 <- ggplot(train, aes(Pclass, fill = Survived)) + geom_bar(position = 'fill')  + labs(y = '%')
+p3 <- ggplot(train, aes(Sex, fill = Survived)) + geom_bar(position = 'fill') +   labs(y = '%')
+p4 <- ggplot(train, aes(Familia, fill = Survived)) + geom_bar(position = 'fill') + labs(y = '%')
+
+ggarrange (p2, p3, p4, ncol=2, nrow=2)
+```
+
+```{r,eval=TRUE,echo=TRUE}
+p1
+```
+
+```{r,eval=TRUE,echo=TRUE}
+plot(arbol)
+```
